@@ -96,6 +96,10 @@ def verify_text(compressed_file_name,text_file,text_decoded,context_txt,save_dec
             with open(compressed_file_name+'_RZ_decoded_text.txt','w') as txt_dec:
                 txt_dec.write(text_decoded )
 
+def save_text(text_decoded, save_file_name):
+    with open(save_file_name, 'w') as txt_dec:
+        txt_dec.write(text_decoded)
+
         
     
 
@@ -103,15 +107,17 @@ def main(
     ckpt_dir: str,
     tokenizer_path: str,
     win_len: int,
-    text_file: str, 
     compression_folder: str,
+    text_file: str = None,
     max_seq_len: int = 512,
     max_batch_size: int = 32,
     compression_alg: str = 'ArithmeticCoding',
     encode_decode: int = 2,
     batched_encode: bool = False,
     verify_save_decoded: int = 2,
-    with_context_start: bool = False
+    with_context_start: bool = False,
+    save_file: str = None,
+    total_length: int = 0,
 ):
 
     # win_len - The context window length and it cannot exceed the max seq length 512
@@ -146,10 +152,9 @@ def main(
     os.makedirs(compression_folder,exist_ok=True)
     compressed_file_name = compression_folder + f'/LLMzip_{win_len}' 
 
-    with open(text_file,'r') as f_in:
-            text_input = f_in.read()
-
     if encode:
+        with open(text_file,'r') as f_in:
+                text_input = f_in.read()
         # Only encoding
         tokens_full = np.array(Encoder.tokenizer.encode(text_input,bos=False,eos=False))
 
@@ -164,9 +169,12 @@ def main(
     
 
     if decode:
-        with open(compressed_file_name+'_metrics.json') as metrics_file:
-            total_length = json.load(metrics_file)['$N_T$'][0] #Load number of tokens from compression metrics for arithmetic coding length
-        
+        try:
+            with open(compressed_file_name+'_metrics.json') as metrics_file:
+                total_length = json.load(metrics_file)['$N_T$'][0] #Load number of tokens from compression metrics for arithmetic coding length
+        except FileNotFoundError:
+            assert(total_length > 0), f"File {compressed_file_name}_metrics.json not found and total_length is not provided"
+            
         if with_context_start:
             starter_tokens = np.load(compressed_file_name+'_starter_tokens.npy')
             context_txt = Encoder.tokenizer.decode(starter_tokens.tolist())
@@ -180,6 +188,8 @@ def main(
             decoded_text_ac = Decoder.decode_AC(win_len,starter_tokens,total_length, compressed_file_name_full)
             if verify_save_decoded > 0:
                 verify_text(compressed_file_name,text_file,decoded_text_ac,context_txt,verify_save_decoded==2,'ArithmeticCoding')
+            if save_file is not None:
+                save_text(decoded_text_ac,save_file)
             
         if (compression_alg == 'RankZip')or(compression_alg =='both'): 
             compressed_file_name_full = compressed_file_name+'_RZ.txt'
@@ -188,6 +198,8 @@ def main(
             decoded_text_rz = Decoder.decode_ranks(win_len,starter_tokens, compressed_file_name_full)
             if verify_save_decoded > 0:
                 verify_text(compressed_file_name,text_file,decoded_text_rz,context_txt,verify_save_decoded==2,'RankZip')
+            if save_file is not None:
+                save_text(decoded_text_rz,save_file)
 
     print(f"Completed in {time.time() - start_time_main:.2f} seconds")
 
